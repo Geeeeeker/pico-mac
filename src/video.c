@@ -43,7 +43,7 @@
  * The UC approach (with necessary cache clean CMOs) seems to give about
  * +4% (in informal benchmarking...)
  */
-#define VIDEO_UC
+//#define VIDEO_UC
 //#define VIDEO_STREAMING_XIP // Buggy, and unstable video
 //#define VIDEO_CMO_DMA // As opposed to CPU-driven; doesn't work
 #endif
