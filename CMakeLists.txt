@@ -85,11 +85,20 @@ if (USE_PSRAM)
    endif()
    set(DFL_MEMSIZE 4096)
    set(EXTRA_PSRAM_SRC src/rp2_psram.c)
+   # This puts the top 48K of Mac memory in an internal SRAM buffer (not PSRAM),
+   # which avoids video DMA going through the PSRAM/XIP cache stuff.  However,
+   # there's an extra cost/comparison on every memory access.
+   #
+   # Set this to 0 to disable split/discontig memory, putting all Mac memory
+   # into PSRAM:
+   set(RAM_SIZE_INT 49152)
 else()
    set(DFL_MEMSIZE 128)
+   set(RAM_SIZE_INT 0)
 endif()
 set(MEMSIZE ${DFL_MEMSIZE} CACHE STRING "Memory size, in KB")
-set(CMAKE_C_FLAGS "${CMAKE_C_FLAGS} -O3 -DPICO -DMUSASHI_CNF=\\\"../include/m68kconf.h\\\" -DUMAC_MEMSIZE=${MEMSIZE}")
+set(CMAKE_C_FLAGS "${CMAKE_C_FLAGS} -O3 -DPICO -DMUSASHI_CNF=\\\"../include/m68kconf.h\\\" -DUMAC_MEMSIZE=${MEMSIZE} -DRAM_SIZE_HI=${RAM_SIZE_INT}")
+add_compile_definitions(RAM_SIZE_HI=${RAM_SIZE_INT})
 
 if (USE_SD)
    add_compile_definitions(USE_SD=1)

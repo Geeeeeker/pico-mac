@@ -76,6 +76,9 @@ static uint8_t *umac_ram = (uint8_t *)PSRAM_LOCATION;
 #else
 static uint8_t umac_ram[RAM_SIZE];
 #endif
+#if RAM_SIZE_HI > 0
+static uint8_t umac_int_ram[RAM_SIZE_HI];
+#endif
 
 ////////////////////////////////////////////////////////////////////////////////
 
@@ -257,11 +260,16 @@ static void     core1_main()
         printf("Core 1 started\n");
         disc_setup(discs);
 
+#if RAM_SIZE_HI == 0
         umac_init(umac_ram, (void *)umac_rom, discs);
         /* Video runs on core 1, i.e. IRQs/DMA are unaffected by
          * core 0's USB activity.
          */
         video_init((uint32_t *)(umac_ram + umac_get_fb_offset()));
+#else
+        umac_init_ext(umac_ram, umac_int_ram, (void *)umac_rom, discs);
+        video_init((uint32_t *) (umac_int_ram + RAM_SIZE_HI - ((DISP_WIDTH * DISP_HEIGHT / 8) + 0x380))); // FIXME
+#endif
 
         printf("Enjoyable Mac times now begin:\n\n");
 
