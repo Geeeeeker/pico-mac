@@ -165,24 +165,29 @@ hfp_loop:    nop                                side 0
 
 % c-sdk {
 static inline void pio_video_program_init(PIO pio, uint sm, uint offset,
-                                          uint video_pin /* then VS, CLK, HS */,
+                                          uint video_pin,
+                                          uint vsync_pin,
+                                          uint clk_pin /* CLK then HS */,
                                           float clk_div) {
-        /* Outputs are consecutive up from Video data */
-        uint vsync_pin = video_pin+1;
-        uint clk_pin = video_pin+2;
-        uint hsync_pin = video_pin+3;
+        /* Pin positions of video, vsync, and clk can be arbitrary.
+         *  But, HS must be contiguous upwards from clk.
+         */
+        uint hsync_pin = clk_pin+1;
+
         /* Init GPIO & directions */
         pio_gpio_init(pio, video_pin);
         pio_gpio_init(pio, hsync_pin);
         pio_gpio_init(pio, vsync_pin);
         pio_gpio_init(pio, clk_pin);
         // FIXME: BPP define
-        pio_sm_set_consecutive_pindirs(pio, sm, video_pin, 4, true /* out */);
+        pio_sm_set_consecutive_pindirs(pio, sm, video_pin, 1, true /* out */);
+        pio_sm_set_consecutive_pindirs(pio, sm, vsync_pin, 1, true /* out */);
+        pio_sm_set_consecutive_pindirs(pio, sm, clk_pin, 2, true /* out */);
 
         pio_sm_config c = pio_video_program_get_default_config(offset);
         sm_config_set_out_pins(&c, video_pin, 1);
         sm_config_set_set_pins(&c, vsync_pin, 1);
-        sm_config_set_sideset_pins(&c, clk_pin);        /* CLK + HS */
+        sm_config_set_sideset_pins(&c, clk_pin);        /* CLK, HS */
         /* Sideset bits are configured via .side_set directive above */
         sm_config_set_out_shift(&c, false /* OUT MSBs first */, true /* Autopull */, 32 /* bits */);
         sm_config_set_fifo_join(&c, PIO_FIFO_JOIN_TX);

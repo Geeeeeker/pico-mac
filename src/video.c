@@ -474,7 +474,12 @@ void    video_init(uint32_t *framebuffer)
 
         pio_video_program_init(pio0, 0,
                                pio_add_program(pio0, &pio_video_program),
-                               GPIO_VID_DATA, /* Followed by HS, VS, CLK */
+                               GPIO_VID_DATA,
+                               GPIO_VID_VS,
+                               GPIO_VID_CLK,
+                               /* CLK is followed by HS:
+                                * these must be contiguous.
+                                */
                                VIDEO_PCLK_MULT);
 
         /* Invert output pins:  HS/VS are active-low, also invert video! */
