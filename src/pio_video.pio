@@ -1,8 +1,8 @@
 ; PIO video output:
 ; This scans out video lines, characteristically some number of bits per pixel,
-; a pixel clock, and timing signals HSync, VSync (in future, DE too).
+; a pixel clock, and timing signals HSync, VSync, and DE.
 ;
-; Copyright 2024 Matt Evans
+; Copyright 2024, 2025 Matt Evans
 ;
 ; Permission is hereby granted, free of charge, to any person
 ; obtaining a copy of this software and associated documentation files
@@ -37,11 +37,11 @@
 ; Supports a max of 15bpp.  That's tons given the number of IO... expecting
 ; to use this with 8, 3, etc.
 ;
-; The output pins are required to be, in this order,
-; 0: Video data
-; 0+BPP: Vsync
-; 1+BPP: PClk
-; 2+BPP: Hsync
+; The Video data and Vsync output pins can be arbitrarily assigned.  The
+; Hsync/DE/clock pins are required to be in this order,
+;  GPIO X:   PClk
+;  GPIO X+1: Hsync
+;  GPIO X+2: DE
 ;
 ; FIXME: 1BPP for now
 ;
@@ -53,9 +53,10 @@
 ; ---------- Config information:   (offset 0 on each line) ----------
 ; 32b:  Timing/sync info:
 ;       [31]     Vsync value for this line
-;       [30:23]   Hsync width (HSW)
-;       [22:15]   HBP width minus 3 (FIXME: check)
+;       [30:23]   Hsync width (HSW) minus 2
+;       [22:15]   HBP width minus 4
 ;       [14:7]    HFP width minus 3
+;       [6]       Visible flag (1=visible line, DE is asserted)
 ; 32b:  Number of visible pixels per line
 ; ---------- Pixel data:  (offset 8 on each line) -------------------
 ; <X * bytes_per_pixel>:  video data (padded with zeros for HBP/HFP pixels)
@@ -90,8 +91,6 @@
 ; The HFP/HBP pixels should be written zero.  Clever DMA programming can
 ; provide these from a separate location to the video data.
 ;
-; FIXME: Add DE (and therefore full HBP/HFP counters in timing word)
-;
 ; There are a couple of pin-mapping tricks going on.  We need to be
 ; able to change the video without messing wtih VS, and we want to
 ; assert HS/VS at the same instant.  That means the syncs aren't part
@@ -106,7 +105,7 @@
 ; .define BPP 123 etc.
 
 .program pio_video
-.side_set 2             ; SS[0] is clk, SS[1] is HS
+.side_set 3             ; SS[0] is clk, SS[1] is HS, SS[2] is DE
 
 frame_start:
 ; The first word gives VS/HSW:  [31]=vsync; [30:23]=HSW
@@ -122,8 +121,7 @@ vs_active:
 vs_inactive:
              set        pins, 0                 side 2
              nop                                side 3
-
-now_read_HSW:           ; X=hsync width:
+now_read_HSW:           ; X=hsync width (note it's been asserted for 1 cycle already):
              out        X, 8                    side 2
 hsw_loop:    nop                                side 3
              jmp        X-- hsw_loop            side 2
@@ -136,20 +134,35 @@ hbp_loop:    nop                                side 0
 
 now_read_HFP:           ; Y=HFP width:
              out        Y, 8                    side 0
+; Next, get the 'visible' flag: this selects between
+; a no-DE inner loop vs a with-DE version:
+             out        X, 1                    side 1
+; Pull, discarding the remainder of OSR.
+; Note: these cycles (and HFP/visible read) are part of HBP.
+             pull       block                   side 0
+             jmp        !X, non_visible_line    side 1
 
-; Pull, discarding the remainder of OSR.  This prepares X pixel count.
-; Note: these cycles (and HFP read) are part of HBP.
-             pull       block                   side 1
+visible_line:
+; Prepare X pixel count:
              out        X, 32                   side 0
              nop                                side 1
-pixels_loop: ; OSR primed/autopulled
-             ; FIXME: side-set DE=1
-             out        pins, 1                 side 0  ; BPP
-             jmp        X-- pixels_loop         side 1
-             ; FIXME: side-set DE=0
-             ; Set video BLACK (1)
+pixels_loop: ; OSR primed/autopulled; we side-set DE=1
+             out        pins, 1                 side 4
+             jmp        X-- pixels_loop         side 5
+             ; Set video BLACK (1), and side-set DE=0.
+             ; These count as an HFP cycle
              mov        pins, !NULL             side 0
+             jmp        hfp_loop                side 1
+
+non_visible_line:
+             out        X, 32                   side 0
              nop                                side 1
+nv_pixels_loop: ; OSR primed/autopulled; no DE side-set
+             out        pins, 1                 side 0  ; Will be all black
+             jmp        X-- nv_pixels_loop      side 1
+             nop                                side 0
+             nop                                side 1
+
 ; Now perform HFP delay
 hfp_loop:    nop                                side 0
              jmp        Y-- hfp_loop            side 1
@@ -159,35 +172,37 @@ hfp_loop:    nop                                side 0
              nop                                side 0
              jmp        frame_start             side 1
 
-; HFP 2 min
-; HBP 2 min
+; HFP 4 min
+; HBP 3 min
 
 
 % c-sdk {
 static inline void pio_video_program_init(PIO pio, uint sm, uint offset,
                                           uint video_pin,
                                           uint vsync_pin,
-                                          uint clk_pin /* CLK then HS */,
+                                          uint clk_pin /* CLK then HS, DE */,
                                           float clk_div) {
         /* Pin positions of video, vsync, and clk can be arbitrary.
-         *  But, HS must be contiguous upwards from clk.
+         *  But, HS and DE must be contiguous upwards from clk.
          */
         uint hsync_pin = clk_pin+1;
+        uint de_pin = clk_pin+2;
 
         /* Init GPIO & directions */
-        pio_gpio_init(pio, video_pin);
+        pio_gpio_init(pio, video_pin); // some number of
         pio_gpio_init(pio, hsync_pin);
         pio_gpio_init(pio, vsync_pin);
         pio_gpio_init(pio, clk_pin);
+        pio_gpio_init(pio, de_pin);
         // FIXME: BPP define
         pio_sm_set_consecutive_pindirs(pio, sm, video_pin, 1, true /* out */);
         pio_sm_set_consecutive_pindirs(pio, sm, vsync_pin, 1, true /* out */);
-        pio_sm_set_consecutive_pindirs(pio, sm, clk_pin, 2, true /* out */);
+        pio_sm_set_consecutive_pindirs(pio, sm, clk_pin, 3, true /* out */);
 
         pio_sm_config c = pio_video_program_get_default_config(offset);
         sm_config_set_out_pins(&c, video_pin, 1);
         sm_config_set_set_pins(&c, vsync_pin, 1);
-        sm_config_set_sideset_pins(&c, clk_pin);        /* CLK, HS */
+        sm_config_set_sideset_pins(&c, clk_pin);        /* CLK, HS, DE */
         /* Sideset bits are configured via .side_set directive above */
         sm_config_set_out_shift(&c, false /* OUT MSBs first */, true /* Autopull */, 32 /* bits */);
         sm_config_set_fifo_join(&c, PIO_FIFO_JOIN_TX);

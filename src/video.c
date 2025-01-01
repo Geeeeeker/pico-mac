@@ -108,8 +108,10 @@
 static uint32_t video_null[VIDEO_VISIBLE_WPL];
 static uint32_t *video_framebuffer;
 
-/* DMA buffer containing 2 pairs of per-line config words, for VS and not-VS: */
-static uint32_t video_dma_cfg[4];
+/* DMA buffer containing 3 pairs of per-line config words, for VS,
+ * not-VS non-visible, and not-VS visible (where DE is asserted):
+ */
+static uint32_t video_dma_cfg[2*3];
 
 /* 3 DMA channels are used.  The first to transfer data to PIO, and
  * the other two to transfer descriptors to the first channel.
@@ -251,7 +253,12 @@ static const uint32_t   *__not_in_flash_func(video_line_addr)(unsigned int y)
 
 static const uint32_t   *__not_in_flash_func(video_cfg_addr)(unsigned int y)
 {
-        return &video_dma_cfg[(y < VIDEO_VSW) ? 0 : 2];
+	if (y < VIDEO_VSW)
+		return &video_dma_cfg[0]; /* With VSYNC, no DE */
+	else if ((y >= VIDEO_FB_V_VIS_START) && (y < VIDEO_FB_V_VIS_END))
+		return &video_dma_cfg[4]; /* Without VSYNC, DE */
+	else
+		return &video_dma_cfg[2]; /* Without VSYNC, no DE */
 }
 
 static void    __not_in_flash_func(video_dma_prep_new)()
@@ -307,13 +314,15 @@ static void     video_prep_buffer()
 
         unsigned int porch_padding = (VIDEO_HRES - VIDEO_FB_HRES)/2;
         // FIXME: HBP/HFP are prob off by one or so, check
-        uint32_t timing = ((VIDEO_HSW - 1) << 23) |
-                ((VIDEO_HBP + porch_padding - 3) << 15) |
-                ((VIDEO_HFP + porch_padding - 4) << 7);
+        uint32_t timing = ((VIDEO_HSW - 2) << 23) |
+                ((VIDEO_HBP + porch_padding - 4) << 15) |
+                ((VIDEO_HFP + porch_padding - 3) << 7);
         video_dma_cfg[0] = timing | 0x80000000;
         video_dma_cfg[1] = VIDEO_FB_HRES - 1;
         video_dma_cfg[2] = timing;
         video_dma_cfg[3] = VIDEO_FB_HRES - 1;
+        video_dma_cfg[4] = timing | (1 << 6); /* Flag to assert DE */
+        video_dma_cfg[5] = VIDEO_FB_HRES - 1;
 }
 
 static void     video_init_dma()
@@ -477,7 +486,7 @@ void    video_init(uint32_t *framebuffer)
                                GPIO_VID_DATA,
                                GPIO_VID_VS,
                                GPIO_VID_CLK,
-                               /* CLK is followed by HS:
+                               /* CLK is followed by HS, then DE:
                                 * these must be contiguous.
                                 */
                                VIDEO_PCLK_MULT);
