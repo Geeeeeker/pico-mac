@@ -64,6 +64,7 @@ set(UMAC_INCLUDE_PATHS ${UMAC_PATH}/include ${UMAC_MUSASHI_PATH})
 
 add_compile_definitions(USE_PSRAM=$<BOOL:${USE_PSRAM}>)
 add_compile_definitions(PSRAM_CS_PIN=${USE_PSRAM_CS})
+add_compile_definitions(GPIO_LED_PIN=${GPIO_LED_PIN})
 
 # This isn't very nice, but hey it's Sunday :p
 set(UMAC_SOURCES
