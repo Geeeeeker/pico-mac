@@ -123,6 +123,7 @@ if (TARGET tinyusb_device)
   add_executable(firmware
     src/main.c
     src/video.c
+    src/lcd_nv3052.c
     src/kbd.c
     src/hid.c
     ${EXTRA_SD_SRC}
