@@ -497,7 +497,7 @@ void    video_init(uint32_t *framebuffer)
         gpio_set_outover(GPIO_VID_DATA, GPIO_OVERRIDE_INVERT);
         /* Highest drive strength (VGA is current-based, innit) */
         hw_write_masked(&padsbank0_hw->io[GPIO_VID_DATA],
-                        PADS_BANK0_GPIO0_DRIVE_VALUE_12MA << PADS_BANK0_GPIO0_DRIVE_LSB,
+                        PADS_BANK0_GPIO0_DRIVE_VALUE_4MA << PADS_BANK0_GPIO0_DRIVE_LSB,
                         PADS_BANK0_GPIO0_DRIVE_BITS);
 
         /* IRQ handlers for DMA_IRQ_0: */
