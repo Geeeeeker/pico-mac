@@ -36,4 +36,10 @@
 #define GPIO_VID_CLK    (GPIO_VID_VS + 1)
 #define GPIO_VID_HS     (GPIO_VID_CLK + 1)
 
+#define GPIO_LCD_RESET  6
+#define GPIO_LCD_SDO    8
+#define GPIO_LCD_CS     9
+#define GPIO_LCD_SCLK   10
+#define GPIO_LCD_SDI    11
+
 #endif
