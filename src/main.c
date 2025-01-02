@@ -38,6 +38,7 @@
 #include "pico/time.h"
 #include "hw.h"
 #include "video.h"
+#include "lcd.h"
 #include "kbd.h"
 
 #include "bsp/rp2040/board.h"
@@ -259,6 +260,7 @@ static void     core1_main()
 
         printf("Core 1 started\n");
         disc_setup(discs);
+        lcd_init();
 
 #if RAM_SIZE_HI == 0
         umac_init(umac_ram, (void *)umac_rom, discs);
