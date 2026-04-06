@@ -66,7 +66,6 @@ jobs:
           cd $PICO_SDK_PATH
           git submodule update --init
 
-      # 构建 umac 主机工具（需要 SDL2）
       - name: Build umac host tool
         run: |
           cd external/umac
@@ -83,16 +82,18 @@ jobs:
             make $MAKE_ARGS
           fi
 
-      - name: Decode ROM image from secret
-        env:
-          ROM_B64: ${{ secrets.ROM_BASE64 }}
+      # 直接从 GitHub 下载 Mac Plus ROM（不再需要 Secret）
+      - name: Download Mac Plus ROM
         run: |
-          if [ -z "$ROM_B64" ]; then
-            echo "ERROR: ROM_BASE64 secret is not set"
+          ROM_URL="https://raw.githubusercontent.com/sentient06/MacROMan/master/TestImages/128KB%20ROMs/1986-03%20-%204D1F8172%20-%20MacPlus%20v3.ROM"
+          curl -L -o macplus.rom "$ROM_URL"
+          if [ ! -s macplus.rom ]; then
+            echo "ERROR: Failed to download ROM file"
             exit 1
           fi
-          echo "$ROM_B64" | base64 -d > macplus.rom
+          echo "ROM downloaded successfully"
 
+      # 可选：从 Secret 解码磁盘镜像（若不需要内嵌镜像，可留空 DISC_BASE64）
       - name: Decode disk image from secret
         env:
           DISC_B64: ${{ secrets.DISC_BASE64 }}
