@@ -119,9 +119,10 @@ jobs:
       - name: Create incbin headers
         run: |
           mkdir -p incbin
-          xxd -i rom.bin > incbin/umac-rom.h
+          # 生成纯数据列表（不带数组声明），供 #include 使用
+          hexdump -v -e '1/1 "0x%02x, "' rom.bin | sed 's/, $//' > incbin/umac-rom.h
           if [ -s disc.bin ]; then
-            xxd -i disc.bin > incbin/umac-disc.h
+            hexdump -v -e '1/1 "0x%02x, "' disc.bin | sed 's/, $//' > incbin/umac-disc.h
           else
             echo > incbin/umac-disc.h
           fi
