@@ -3,8 +3,8 @@ name: Build and Release Firmware
 on:
   push:
     tags:
-      - 'v*'               # 推送标签时触发（例如 v1.0.0）
-  workflow_dispatch:       # 允许手动触发，可指定构建参数
+      - 'v*'
+  workflow_dispatch:
     inputs:
       memsize:
         description: 'Memory size in KB (128-208)'
@@ -58,7 +58,7 @@ jobs:
       - name: Install toolchain and dependencies
         run: |
           sudo apt update
-          sudo apt install -y gcc-arm-none-eabi cmake make xxd
+          sudo apt install -y gcc-arm-none-eabi cmake make xxd libsdl2-dev
 
       - name: Clone Pico SDK
         run: |
@@ -66,7 +66,7 @@ jobs:
           cd $PICO_SDK_PATH
           git submodule update --init
 
-      # 根据输入参数构建 umac 主机工具
+      # 构建 umac 主机工具（需要 SDL2）
       - name: Build umac host tool
         run: |
           cd external/umac
@@ -83,7 +83,6 @@ jobs:
             make $MAKE_ARGS
           fi
 
-      # 从 Secret 还原 ROM 文件（必须）
       - name: Decode ROM image from secret
         env:
           ROM_B64: ${{ secrets.ROM_BASE64 }}
@@ -94,7 +93,6 @@ jobs:
           fi
           echo "$ROM_B64" | base64 -d > macplus.rom
 
-      # 从 Secret 还原磁盘镜像（可选）
       - name: Decode disk image from secret
         env:
           DISC_B64: ${{ secrets.DISC_BASE64 }}
@@ -106,12 +104,10 @@ jobs:
             touch disc.bin
           fi
 
-      # 生成 patched ROM
       - name: Generate patched ROM (rom.bin)
         run: |
           ./external/umac/main -r macplus.rom -W rom.bin
 
-      # 准备 incbin 头文件
       - name: Create incbin headers
         run: |
           mkdir -p incbin
@@ -122,7 +118,6 @@ jobs:
             echo > incbin/umac-disc.h
           fi
 
-      # 配置 CMake（传递构建选项）
       - name: Configure CMake
         run: |
           mkdir -p build
@@ -152,7 +147,7 @@ jobs:
 
       - name: Upload UF2 to Release
         uses: softprops/action-gh-release@v1
-        if: startsWith(github.ref, 'refs/tags/') || github.event_name == 'workflow_dispatch'
+        if: startsWith(github.ref, 'refs/tags/')
         with:
           files: build/firmware.uf2
           generate_release_notes: true
