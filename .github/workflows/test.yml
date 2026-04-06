@@ -39,9 +39,9 @@ on:
         required: false
         default: '5'
       video_pin:
-        description: 'Video output GPIO pin'
+        description: 'Video output GPIO pin (VIDEO=pin, VSYNC=pin+1, HSYNC=pin+3)'
         required: false
-        default: '18'
+        default: '6'          # 修改为 GPIO6，避免与 W5500 冲突
 
 env:
   PICO_SDK_PATH: ${{ github.workspace }}/pico-sdk
@@ -153,7 +153,6 @@ jobs:
       - name: Build firmware
         run: make -C build
 
-      # ========== 新增：上传固件为 Artifact（总是执行） ==========
       - name: Upload firmware as artifact
         uses: actions/upload-artifact@v4
         with:
@@ -161,7 +160,6 @@ jobs:
           path: build/firmware.uf2
           if-no-files-found: error
 
-      # ========== 原有的 Release 上传（仅标签触发） ==========
       - name: Upload UF2 to Release
         uses: softprops/action-gh-release@v1
         if: startsWith(github.ref, 'refs/tags/')
