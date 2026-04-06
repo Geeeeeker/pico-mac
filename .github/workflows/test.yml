@@ -13,7 +13,7 @@ on:
       use_vga_res:
         description: 'Use 640x480 VGA resolution (true/false)'
         required: false
-        default: 'true'          # 默认开启 VGA 分辨率
+        default: 'true'
       use_sd:
         description: 'Enable SD card support (true/false)'
         required: false
@@ -105,13 +105,16 @@ jobs:
 
       - name: Generate patched ROM (rom.bin)
         run: |
-          export SDL_VIDEODRIVER=dummy   # 避免 SDL 尝试打开窗口
+          export SDL_VIDEODRIVER=dummy
+          set +e
           ./external/umac/main -r macplus.rom -W rom.bin
-          # 即使退出码非零，只要 rom.bin 已生成就继续
+          EXIT_CODE=$?
+          set -e
           if [ ! -s rom.bin ]; then
-            echo "ERROR: rom.bin not generated"
+            echo "ERROR: rom.bin not generated (umac exit code $EXIT_CODE)"
             exit 1
           fi
+          echo "rom.bin generated successfully (umac exit code $EXIT_CODE ignored)"
 
       - name: Create incbin headers
         run: |
