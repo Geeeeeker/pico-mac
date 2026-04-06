@@ -1,0 +1,161 @@
+name: Build and Release Firmware
+
+on:
+  push:
+    tags:
+      - 'v*'               # 推送标签时触发（例如 v1.0.0）
+  workflow_dispatch:       # 允许手动触发，可指定构建参数
+    inputs:
+      memsize:
+        description: 'Memory size in KB (128-208)'
+        required: false
+        default: '128'
+      use_vga_res:
+        description: 'Use 640x480 VGA resolution (true/false)'
+        required: false
+        default: 'false'
+      use_sd:
+        description: 'Enable SD card support (true/false)'
+        required: false
+        default: 'false'
+      sd_tx:
+        description: 'SD SPI TX (MOSI) GPIO pin'
+        required: false
+        default: '3'
+      sd_rx:
+        description: 'SD SPI RX (MISO) GPIO pin'
+        required: false
+        default: '4'
+      sd_sck:
+        description: 'SD SPI SCK GPIO pin'
+        required: false
+        default: '2'
+      sd_cs:
+        description: 'SD SPI CS GPIO pin'
+        required: false
+        default: '5'
+      sd_mhz:
+        description: 'SD SPI clock speed in MHz'
+        required: false
+        default: '5'
+      video_pin:
+        description: 'Video output GPIO pin'
+        required: false
+        default: '18'
+
+env:
+  PICO_SDK_PATH: ${{ github.workspace }}/pico-sdk
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+        with:
+          submodules: recursive
+
+      - name: Install toolchain and dependencies
+        run: |
+          sudo apt update
+          sudo apt install -y gcc-arm-none-eabi cmake make xxd
+
+      - name: Clone Pico SDK
+        run: |
+          git clone --depth 1 --branch master https://github.com/raspberrypi/pico-sdk.git $PICO_SDK_PATH
+          cd $PICO_SDK_PATH
+          git submodule update --init
+
+      # 根据输入参数构建 umac 主机工具
+      - name: Build umac host tool
+        run: |
+          cd external/umac
+          MAKE_ARGS=""
+          if [ -n "${{ github.event.inputs.memsize }}" ]; then
+            MAKE_ARGS="$MAKE_ARGS MEMSIZE=${{ github.event.inputs.memsize }}"
+          fi
+          if [ "${{ github.event.inputs.use_vga_res }}" = "true" ]; then
+            MAKE_ARGS="$MAKE_ARGS DISP_WIDTH=640 DISP_HEIGHT=480"
+          fi
+          if [ -z "$MAKE_ARGS" ]; then
+            make
+          else
+            make $MAKE_ARGS
+          fi
+
+      # 从 Secret 还原 ROM 文件（必须）
+      - name: Decode ROM image from secret
+        env:
+          ROM_B64: ${{ secrets.ROM_BASE64 }}
+        run: |
+          if [ -z "$ROM_B64" ]; then
+            echo "ERROR: ROM_BASE64 secret is not set"
+            exit 1
+          fi
+          echo "$ROM_B64" | base64 -d > macplus.rom
+
+      # 从 Secret 还原磁盘镜像（可选）
+      - name: Decode disk image from secret
+        env:
+          DISC_B64: ${{ secrets.DISC_BASE64 }}
+        run: |
+          if [ -n "$DISC_B64" ]; then
+            echo "$DISC_B64" | base64 -d > disc.bin
+          else
+            echo "No internal disk image provided, creating empty stub"
+            touch disc.bin
+          fi
+
+      # 生成 patched ROM
+      - name: Generate patched ROM (rom.bin)
+        run: |
+          ./external/umac/main -r macplus.rom -W rom.bin
+
+      # 准备 incbin 头文件
+      - name: Create incbin headers
+        run: |
+          mkdir -p incbin
+          xxd -i rom.bin > incbin/umac-rom.h
+          if [ -s disc.bin ]; then
+            xxd -i disc.bin > incbin/umac-disc.h
+          else
+            echo > incbin/umac-disc.h
+          fi
+
+      # 配置 CMake（传递构建选项）
+      - name: Configure CMake
+        run: |
+          mkdir -p build
+          cd build
+          CMAKE_ARGS=""
+          if [ "${{ github.event.inputs.use_sd }}" = "true" ]; then
+            CMAKE_ARGS="$CMAKE_ARGS -DUSE_SD=true"
+            CMAKE_ARGS="$CMAKE_ARGS -DSD_TX=${{ github.event.inputs.sd_tx }}"
+            CMAKE_ARGS="$CMAKE_ARGS -DSD_RX=${{ github.event.inputs.sd_rx }}"
+            CMAKE_ARGS="$CMAKE_ARGS -DSD_SCK=${{ github.event.inputs.sd_sck }}"
+            CMAKE_ARGS="$CMAKE_ARGS -DSD_CS=${{ github.event.inputs.sd_cs }}"
+            CMAKE_ARGS="$CMAKE_ARGS -DSD_MHZ=${{ github.event.inputs.sd_mhz }}"
+          fi
+          if [ -n "${{ github.event.inputs.memsize }}" ] && [ "${{ github.event.inputs.memsize }}" != "128" ]; then
+            CMAKE_ARGS="$CMAKE_ARGS -DMEMSIZE=${{ github.event.inputs.memsize }}"
+          fi
+          if [ "${{ github.event.inputs.use_vga_res }}" = "true" ]; then
+            CMAKE_ARGS="$CMAKE_ARGS -DUSE_VGA_RES=1"
+          fi
+          if [ -n "${{ github.event.inputs.video_pin }}" ]; then
+            CMAKE_ARGS="$CMAKE_ARGS -DVIDEO_PIN=${{ github.event.inputs.video_pin }}"
+          fi
+          cmake .. -DPICO_SDK_PATH=$PICO_SDK_PATH $CMAKE_ARGS
+
+      - name: Build firmware
+        run: make -C build
+
+      - name: Upload UF2 to Release
+        uses: softprops/action-gh-release@v1
+        if: startsWith(github.ref, 'refs/tags/') || github.event_name == 'workflow_dispatch'
+        with:
+          files: build/firmware.uf2
+          generate_release_notes: true
+          prerelease: false
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
