@@ -13,7 +13,7 @@ on:
       use_vga_res:
         description: 'Use 640x480 VGA resolution (true/false)'
         required: false
-        default: 'false'
+        default: 'true'          # 默认开启 VGA 分辨率
       use_sd:
         description: 'Enable SD card support (true/false)'
         required: false
@@ -82,7 +82,6 @@ jobs:
             make $MAKE_ARGS
           fi
 
-      # 直接从 GitHub 下载 Mac Plus ROM（不再需要 Secret）
       - name: Download Mac Plus ROM
         run: |
           ROM_URL="https://raw.githubusercontent.com/sentient06/MacROMan/master/TestImages/128KB%20ROMs/1986-03%20-%204D1F8172%20-%20MacPlus%20v3.ROM"
@@ -93,7 +92,6 @@ jobs:
           fi
           echo "ROM downloaded successfully"
 
-      # 可选：从 Secret 解码磁盘镜像（若不需要内嵌镜像，可留空 DISC_BASE64）
       - name: Decode disk image from secret
         env:
           DISC_B64: ${{ secrets.DISC_BASE64 }}
@@ -107,7 +105,13 @@ jobs:
 
       - name: Generate patched ROM (rom.bin)
         run: |
+          export SDL_VIDEODRIVER=dummy   # 避免 SDL 尝试打开窗口
           ./external/umac/main -r macplus.rom -W rom.bin
+          # 即使退出码非零，只要 rom.bin 已生成就继续
+          if [ ! -s rom.bin ]; then
+            echo "ERROR: rom.bin not generated"
+            exit 1
+          fi
 
       - name: Create incbin headers
         run: |
